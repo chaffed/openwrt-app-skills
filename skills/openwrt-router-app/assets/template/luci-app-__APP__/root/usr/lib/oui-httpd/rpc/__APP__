@@ -1,0 +1,220 @@
+--[[
+    @object-name: __APP__
+    @object-desc: __TITLE__ (luci-app-__APP__) for the GL.iNet admin panel.
+
+    The panel only lets a logged-in administrator call these methods. They
+    run /usr/bin/__APP__ without a shell (arguments are passed as a list)
+    and read or write the "__APP__" UCI settings. Every value is checked
+    here before it is used or stored (gl-validator.d/__APP__.lua turns the
+    panel's own, much stricter check off for set_config and set_secret).
+
+    The panel's ngx.pipe gives a command arguments only (no stdin, no
+    environment), and arguments are visible to every process, so a secret
+    never travels that way: set_secret writes it with UCI directly.
+
+    The panel writes every call to the system log unless the method's name
+    contains "get", "load" or "check"; hence get_status and get_data, which
+    the Overview calls often.
+
+    nginx keeps this module in memory once used: the package reloads nginx
+    on install so a new version takes effect.
+
+    SPDX-License-Identifier: MIT
+--]]
+
+local cjson = require "cjson"
+local uci = require "uci"
+
+local M = {}
+
+local BIN = "/usr/bin/__APP__"
+local AUTH = "/etc/config/__APP___auth"
+
+-- The panel's ngx.pipe is GL's own: spawn(args, opts), then
+-- stdout_read_all() and wait(), nothing else.
+local function spawn(cmd, seconds)
+    local ms = (seconds or 30) * 1000
+    local proc = ngx.pipe.spawn(cmd, { stdout_read_timeout = ms, wait_timeout = ms })
+    if not proc then return "" end
+    local out = proc:stdout_read_all()
+    proc:wait()
+    return out or ""
+end
+
+local function run(args, seconds)
+    local cmd = { BIN }
+    for _, a in ipairs(args) do cmd[#cmd + 1] = a end
+    return spawn(cmd, seconds)
+end
+
+local function run_json(args, seconds)
+    local ok, res = pcall(cjson.decode, run(args, seconds))
+    if ok and type(res) == "table" then return res end
+    return { err_code = -1, err_msg = "__TITLE__ did not answer" }
+end
+
+local function int_arg(v, lo, hi, default)
+    v = tonumber(v)
+    if not v or v ~= v then return default end
+    v = math.floor(v)
+    if v < lo then return lo end
+    if v > hi then return hi end
+    return v
+end
+
+-- "%.0f", not "%d": the panel's Lua may use 32-bit integers.
+local function whole(n) return string.format("%.0f", n) end
+
+--[[
+    @method-name: get_status
+    @method-desc: Scheduler state and the latest reading. Says whether a secret is saved, never what it is.
+--]]
+M.get_status = function()
+    return run_json({ "status" })
+end
+
+--[[
+    @method-name: get_data
+    @method-desc: Stored readings of a period, as CSV text.
+    @in number since  Unix time.
+    @in number until  Unix time (default: now).
+--]]
+M.get_data = function(params)
+    params = params or {}
+    local args = { "data", whole(int_arg(params.since, 0, 4294967295, 0)) }
+    if params["until"] ~= nil then
+        args[#args + 1] = whole(int_arg(params["until"], 0, 4294967295, 4294967295))
+    end
+    return run_json(args, 60)
+end
+
+--[[
+    @method-name: check
+    @method-desc: Take a reading now and return the new status.
+--]]
+M.check = function()
+    run({ "check" }, 90)
+    return run_json({ "status" })
+end
+
+--[[
+    @method-name: clear
+    @method-desc: Delete the stored history.
+--]]
+M.clear = function()
+    return run_json({ "clear" }, 60)
+end
+
+-- ------------------------------------------------------------- settings --
+
+local function range(lo, hi)
+    return function(v)
+        return v:match("^%d+$") ~= nil and #v <= 10 and tonumber(v) >= lo and tonumber(v) <= hi
+    end
+end
+
+local function text(max)
+    return function(v) return #v <= max and not v:find("[%z\1-\31\127]") end
+end
+
+local function host(v)
+    return v:match("^[%w%.:_%-]+$") ~= nil and v:sub(1, 1) ~= "-" and #v <= 253
+end
+
+-- Every setting the panel may change, with the check its value must pass.
+-- Keep in step with LuCI's settings.js and the form in gl.js
+-- (tests/settings.test.js checks).
+local FIELDS = {
+    enabled = { check = function(v) return v == "0" or v == "1" end },
+    interval = { check = range(1, 60) },
+    target = { check = host },
+    history_days = { optional = true, check = range(1, 730) },
+}
+M.FIELDS = FIELDS
+
+--[[
+    @method-name: get_config
+    @method-desc: Current settings. The secret is not among them.
+--]]
+M.get_config = function()
+    local c = uci.cursor()
+    local config = {}
+    for key in pairs(FIELDS) do
+        local v = c:get("__APP__", "main", key)
+        if type(v) == "string" then config[key] = v end
+    end
+    -- cjson writes an empty table as an array; the page copes with both.
+    return { config = config }
+end
+
+--[[
+    @method-name: set_config
+    @method-desc: Check and store settings. Nothing is stored unless every value is valid.
+    @in object values  setting -> value
+--]]
+M.set_config = function(params)
+    local values = type(params) == "table" and params.values
+    if type(values) ~= "table" then
+        return { err_code = -1, err_msg = "no settings were sent" }
+    end
+    local changes = {}
+    for key, v in pairs(values) do
+        local field = type(key) == "string" and FIELDS[key]
+        if not field then
+            return { err_code = -1, err_msg = "unknown setting", field = tostring(key) }
+        end
+        if type(v) == "boolean" then
+            v = v and "1" or "0"
+        elseif type(v) == "number" then
+            v = (v == math.floor(v)) and whole(v) or tostring(v)
+        elseif type(v) ~= "string" then
+            return { err_code = -1, err_msg = "invalid value", field = key }
+        end
+        v = v:match("^%s*(.-)%s*$")
+        if v == "" then
+            if not field.optional then
+                return { err_code = -1, err_msg = "this setting cannot be empty", field = key }
+            end
+            changes[#changes + 1] = { key, false }
+        elseif not field.check(v) then
+            return { err_code = -1, err_msg = "invalid value", field = key }
+        else
+            changes[#changes + 1] = { key, v }
+        end
+    end
+    local c = uci.cursor()
+    if not c:get("__APP__", "main") then c:set("__APP__", "main", "__APP__") end
+    for _, ch in ipairs(changes) do
+        if ch[2] == false then c:delete("__APP__", "main", ch[1]) else c:set("__APP__", "main", ch[1], ch[2]) end
+    end
+    c:commit("__APP__")
+    -- The scheduler re-reads its settings at least once a minute.
+    return { saved = true }
+end
+
+--[[
+    @method-name: set_secret
+    @method-desc: Store the secret (root-only file). It cannot be read back.
+    @in string secret
+--]]
+M.set_secret = function(params)
+    local s = type(params) == "table" and params.secret
+    if type(s) ~= "string" or s == "" then
+        return { err_code = -1, err_msg = "no secret was sent", field = "secret" }
+    end
+    if not text(128)(s) then
+        return { err_code = -1, err_msg = "invalid value", field = "secret" }
+    end
+    -- The file must exist and be root only before the secret goes in
+    -- (UCI keeps a file's mode when it rewrites it).
+    local f = io.open(AUTH, "a")
+    if f then f:close() end
+    spawn({ "/bin/chmod", "600", AUTH }, 10)
+    local c = uci.cursor()
+    if not c:get("__APP___auth", "main") then c:set("__APP___auth", "main", "auth") end
+    c:set("__APP___auth", "main", "secret", s)
+    c:commit("__APP___auth")
+    return { ok = true }
+end
+
+return M

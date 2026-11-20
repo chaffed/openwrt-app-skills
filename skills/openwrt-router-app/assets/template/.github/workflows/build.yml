@@ -1,0 +1,65 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint shell scripts
+        run: |
+          shellcheck luci-app-__APP__/root/usr/bin/__APP__ \
+            luci-app-__APP__/root/usr/libexec/rpcd/luci.__APP__ \
+            luci-app-__APP__/root/etc/init.d/__APP__ \
+            luci-app-__APP__/root/etc/uci-defaults/* \
+            scripts/*.sh tests/*.sh
+
+      - name: Check JavaScript syntax
+        run: |
+          for f in $(find luci-app-__APP__/htdocs -name '*.js'); do
+            node -e "new Function('module', require('fs').readFileSync('$f', 'utf8'))"
+          done
+
+      - name: Check Lua syntax
+        run: |
+          sudo apt-get install -y -qq lua5.1 >/dev/null
+          luac5.1 -p luci-app-__APP__/root/usr/lib/oui-httpd/rpc/__APP__ luci-app-__APP__/root/usr/share/gl-validator.d/__APP__.lua tests/gl/rpc.lua
+
+      - name: Check JSON files
+        run: |
+          for f in $(find luci-app-__APP__ -name '*.json'); do python3 -m json.tool "$f" > /dev/null; done
+
+      - name: Every setting in LuCI, the GL panel form and its module
+        run: node tests/settings.test.js
+
+      - name: The pages in a browser (LuCI and GL panel stand-in, OpenWrt 23.05 container)
+        run: |
+          npm install --no-save playwright-core
+          node tests/web.test.js
+
+      - name: Build ipk
+        run: scripts/build-ipk.sh dist
+
+      - name: Install, upgrade and remove the ipk on a clean OpenWrt 23.05
+        run: sh tests/install.test.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-__APP__
+          path: dist/*.ipk
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.ipk
+          generate_release_notes: true

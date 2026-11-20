@@ -1,0 +1,10 @@
+{
+  "name": "openwrt-app-skills",
+  "version": "0.1.0",
+  "description": "Build, test and ship router apps for OpenWrt and GL.iNet routers: luci-app packages with LuCI pages, a GL.iNet admin-panel page, a .ipk built without the SDK, Docker/browser test rigs and a signed opkg feed.",
+  "author": { "name": "chaffed", "url": "https://github.com/chaffed" },
+  "repository": "https://github.com/chaffed/openwrt-app-skills",
+  "license": "MIT",
+  "keywords": ["openwrt", "luci", "gl.inet", "router", "opkg", "ipk"],
+  "skills": ["./skills/openwrt-router-app"]
+}

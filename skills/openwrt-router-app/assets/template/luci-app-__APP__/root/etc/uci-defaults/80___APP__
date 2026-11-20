@@ -1,0 +1,33 @@
+#!/bin/sh
+# Runs once after install or upgrade (postinst runs it and removes it).
+# Keep it idempotent: it also runs on every upgrade.
+touch /etc/config/__APP___auth
+chmod 600 /etc/config/__APP___auth
+uci -q get __APP___auth.main >/dev/null || { uci set __APP___auth.main=auth; uci commit __APP___auth; }
+chmod 600 /etc/config/__APP___auth
+# When settings are kept across an upgrade, opkg leaves the package's own
+# copies next to them as <name>-opkg; nothing reads those.
+rm -f /etc/config/__APP__-opkg /etc/config/__APP___auth-opkg
+# The rpcd plugin and the menu entry: visible without a reboot.
+rm -f /tmp/luci-indexcache* 2>/dev/null
+rm -rf /tmp/luci-modulecache 2>/dev/null
+/etc/init.d/rpcd reload 2>/dev/null
+
+# reload_config only notices changes to configs it already has a checksum
+# for; register ours so the first "Save & Apply" restarts the scheduler.
+if [ -f /var/run/config.md5 ] && ! grep -q '/var/run/config.check/__APP__$' /var/run/config.md5; then
+	mkdir -p /var/run/config.check
+	uci show __APP__ > /var/run/config.check/__APP__ 2>/dev/null
+	md5sum /var/run/config.check/__APP__ >> /var/run/config.md5
+	rm -rf /var/run/config.check
+fi
+
+# GL.iNet admin panel: its web server keeps a panel module in memory once
+# it has been used, so reload it (gracefully) to pick up a new version.
+if [ -d /usr/lib/oui-httpd/rpc ] && [ -s /var/run/nginx.pid ] && [ -x /usr/sbin/nginx ]; then
+	/usr/sbin/nginx -s reload 2>/dev/null
+fi
+
+/etc/init.d/__APP__ enable 2>/dev/null
+/etc/init.d/__APP__ restart 2>/dev/null
+exit 0

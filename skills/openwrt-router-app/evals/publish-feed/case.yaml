@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: publish-feed
+expected_outcome: |
+  feed/ holds a script that builds a Packages index (control fields + Filename, Size, SHA256sum) and Packages.gz, a workflow that downloads the latest release ipks, signs Packages with usign from a repository secret and publishes to GitHub Pages, and a README with opkg-key add + customfeeds.conf steps.

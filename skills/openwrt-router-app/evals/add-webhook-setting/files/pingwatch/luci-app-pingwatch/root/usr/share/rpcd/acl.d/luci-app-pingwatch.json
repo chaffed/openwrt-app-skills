@@ -1,0 +1,17 @@
+{
+	"luci-app-pingwatch": {
+		"description": "Grant access to Ping Watch",
+		"read": {
+			"ubus": {
+				"luci.pingwatch": [ "status", "data" ]
+			},
+			"uci": [ "pingwatch" ]
+		},
+		"write": {
+			"ubus": {
+				"luci.pingwatch": [ "check", "set_secret", "clear" ]
+			},
+			"uci": [ "pingwatch" ]
+		}
+	}
+}

@@ -1,0 +1,235 @@
+#!/bin/sh
+# Uptime Log: Logs whether a host is up.
+#
+#   uptimelog check            take one reading and store it
+#   uptimelog daemon           check on schedule (started by /etc/init.d/uptimelog)
+#   uptimelog status           state and the latest reading, as JSON
+#   uptimelog data SINCE [UNTIL]
+#                            stored readings between two times (epoch
+#                            seconds), as JSON with the CSV text inside
+#   uptimelog set-secret       read a new secret from stdin and save it
+#   uptimelog clear            delete the stored history
+#
+# The secret lives in /etc/config/uptimelog_auth (root only), apart from the
+# other settings, because the web pages load the whole settings file. It
+# goes in (set-secret) and never comes out: status only says whether one is
+# set.
+#
+# Storage: one CSV file per day in DATA_DIR/readings/ (days before today
+# gzipped, days past history_days removed). A reading that could not be
+# taken is stored as "failed" with its reason, never as an empty or good
+# reading.
+#
+# This file was generated from the openwrt-router-app skill's template; the
+# check itself (do_measure) is the part to replace.
+#
+# SPDX-License-Identifier: MIT
+# shellcheck shell=dash
+
+CONFIG=uptimelog
+VERSION=0.1.0   # the package's PKG_VERSION
+READINGS_HEADER='ts,result,reason,loss_pct,avg_ms'
+
+log() { logger -t uptimelog "$*" 2>/dev/null; [ -t 2 ] && echo "uptimelog: $*" >&2; return 0; }
+
+# Text from outside goes into CSV files and, later, web pages: keep it to
+# printable characters without the CSV and HTML specials.
+clean() { printf '%s' "$*" | tr -d '\000-\037",\\<>' | cut -c1-120; }
+int_or() { case "$1" in ''|*[!0-9]*) echo "$2" ;; *) echo "$1" ;; esac; }
+json_str() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+json_num() { case "$1" in ''|*[!0-9.-]*) printf null ;; *) printf '%s' "$1" ;; esac; }
+
+load_config() {
+	ENABLED=$(uci -q get "$CONFIG.main.enabled"); ENABLED=${ENABLED:-1}
+	INTERVAL=$(int_or "$(uci -q get "$CONFIG.main.interval")" 5)
+	[ "$INTERVAL" -ge 1 ] || INTERVAL=1
+	TARGET=$(uci -q get "$CONFIG.main.target"); TARGET=${TARGET:-1.1.1.1}
+	HISTORY_DAYS=$(int_or "$(uci -q get "$CONFIG.main.history_days")" 90)
+	[ "$HISTORY_DAYS" -ge 1 ] || HISTORY_DAYS=1
+	DATA_DIR=$(uci -q get "$CONFIG.main.data_dir"); DATA_DIR=${DATA_DIR:-/etc/uptimelog}
+	SECRET=$(uci -q get "${CONFIG}_auth.main.secret")
+	RUN_DIR=${UPTIMELOG_RUN_DIR:-/var/run/uptimelog}
+}
+
+# ------------------------------------------------------------------- storage
+
+today() { date +%Y-%m-%d; }
+
+ensure_store() {
+	mkdir -p "$DATA_DIR/readings" || return 1
+	DAY=$(today)
+	READINGS="$DATA_DIR/readings/$DAY.csv"
+	[ -s "$READINGS" ] || echo "$READINGS_HEADER" > "$READINGS"
+}
+
+# Gzip finished days, remove days past the history that is kept. Dates are
+# compared as YYYYMMDD numbers: busybox `test` has no reliable string "<".
+tidy_store() {
+	local cutoff f name
+	cutoff=$(date -d "@$(( $(date +%s) - HISTORY_DAYS * 86400 ))" +%Y%m%d 2>/dev/null) || return 0
+	for f in "$DATA_DIR"/readings/*.csv*; do
+		[ -e "$f" ] || continue
+		name=${f##*/}; name=${name%%.*}
+		case $name in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) continue ;; esac
+		if [ "$(echo "$name" | tr -d -)" -lt "$cutoff" ]; then
+			rm -f "$f"
+		elif [ "$name" != "$DAY" ] && [ "${f%.gz}" = "$f" ]; then
+			gzip -f "$f"
+		fi
+	done
+}
+
+# ------------------------------------------------------------------- the check
+
+# do_measure -> sets RESULT to "loss_pct,avg_ms" and returns 0, or sets
+# FAIL_REASON and returns 1. Replace this with what your app measures.
+# Call it directly, not as $(do_measure): variables set in a command
+# substitution's subshell are lost.
+do_measure() {
+	local out
+	out=$(ping -c 3 -W 2 -q "$TARGET" 2>/dev/null | awk '
+		/packet loss/ { for (i = 1; i <= NF; i++) if ($i ~ /%$/) { sub(/%/, "", $i); loss = $i } }
+		/min\/avg\/max/ { split($0, a, "="); split(a[2], b, "/"); avg = b[2] + 0 }
+		END { if (loss != "") print loss "," avg }')
+	if [ -z "$out" ]; then
+		FAIL_REASON=no_answer
+		return 1
+	fi
+	RESULT=$out
+}
+
+do_check() {
+	local ts
+	load_config
+	mkdir -p "$RUN_DIR" && chmod 700 "$RUN_DIR"
+	ensure_store || { log "cannot write to $DATA_DIR"; return 1; }
+	# One check at a time (the daemon and a click on "Check now"). Busybox
+	# flock has no -w (timeout): only -s -x -u -n.
+	exec 9> "$RUN_DIR/lock"
+	flock -x 9 || { log "could not lock $RUN_DIR/lock"; return 1; }
+	ts=$(date +%s)
+	FAIL_REASON=''; RESULT=''
+	if do_measure; then
+		echo "$ts,ok,,$RESULT" >> "$READINGS"
+	else
+		echo "$ts,failed,$(clean "${FAIL_REASON:-unknown}"),," >> "$READINGS"
+		log "check failed: $FAIL_REASON"
+	fi
+	tidy_store
+}
+
+# ------------------------------------------------------------------- daemon
+
+uptime_s() { local u; read -r u _ < /proc/uptime; echo "${u%.*}"; }
+
+# Interruptible sleep (lets the TERM trap run straight away).
+nap() { sleep "$1" & SLEEP_PID=$!; wait "$SLEEP_PID"; }
+
+# The router has no battery-backed clock: until NTP has set the time a
+# reading would carry the wrong date. The ntp hotplug (shipped with
+# dnsmasq) leaves this flag once the time is valid; without it, give NTP
+# ten minutes.
+time_synced() {
+	[ -e /var/state/dnsmasqsec ] && return 0
+	[ "$(uptime_s)" -ge 600 ]
+}
+
+do_daemon() {
+	local base="" up due
+	SLEEP_PID=""; CHECK_PID=""
+	trap 'kill $SLEEP_PID $CHECK_PID 2>/dev/null; rm -f "$RUN_DIR/next"; exit 0' INT TERM
+	load_config
+	mkdir -p "$RUN_DIR" && chmod 700 "$RUN_DIR"
+	while :; do
+		# Settings are re-read every minute, so changes apply even when
+		# procd's config trigger does not restart us.
+		load_config
+		if [ "$ENABLED" != 1 ] || ! time_synced; then
+			rm -f "$RUN_DIR/next"; base=""
+			nap 60
+			continue
+		fi
+		# The schedule runs on the router's uptime, so a clock step (NTP
+		# after boot) can neither stall it nor cause a burst of checks.
+		up=$(uptime_s)
+		[ -n "$base" ] || base=$(( up - INTERVAL * 60 ))
+		due=$(( base + INTERVAL * 60 ))
+		if [ "$up" -lt "$due" ]; then
+			echo $(( $(date +%s) + due - up )) > "$RUN_DIR/next"
+			nap $(( due - up > 60 ? 60 : due - up ))
+			continue
+		fi
+		base=$up
+		( do_check ) >/dev/null 2>&1 &
+		CHECK_PID=$!
+		wait "$CHECK_PID"
+		CHECK_PID=""
+	done
+}
+
+# ------------------------------------------------------------ web interface
+
+all_readings() {
+	local f
+	for f in "$DATA_DIR"/readings/*.csv*; do
+		[ -e "$f" ] || continue
+		case $f in *.gz) gzip -dc "$f" ;; *) cat "$f" ;; esac | sed 1d
+	done
+}
+
+do_status() {
+	local last next
+	load_config
+	last=$(all_readings 2>/dev/null | tail -n 1)
+	read -r next 2>/dev/null < "$RUN_DIR/next"
+	printf '{"version":%s,"enabled":%s,"interval":%s,"target":%s,"secret_set":%s,"next":%s,"last":%s}\n' \
+		"$(json_str "$VERSION")" "$( [ "$ENABLED" = 1 ] && echo true || echo false)" "$(json_num "$INTERVAL")" \
+		"$(json_str "$TARGET")" "$( [ -n "$SECRET" ] && echo true || echo false)" "$(json_num "$next")" "$(json_str "$last")"
+}
+
+# Readings with SINCE <= ts <= UNTIL as CSV text inside JSON (the pages
+# parse it; JSON-escaping one string is far cheaper than building objects
+# in shell).
+do_data() {
+	local since until
+	load_config
+	since=$(int_or "$1" 0); until=$(int_or "$2" 9999999999)
+	printf '{"header":%s,"csv":' "$(json_str "$READINGS_HEADER")"
+	all_readings 2>/dev/null | awk -F, -v s="$since" -v u="$until" '$1 >= s && $1 <= u' |
+		sed 's/\\/\\\\/g; s/"/\\"/g' | awk 'BEGIN { printf "\"" } { printf "%s\\n", $0 } END { printf "\"" }'
+	echo '}'
+}
+
+do_set_secret() {
+	local s
+	IFS= read -r s || [ -n "$s" ] || s=""
+	touch /etc/config/${CONFIG}_auth
+	chmod 600 /etc/config/${CONFIG}_auth
+	uci -q get "${CONFIG}_auth.main" >/dev/null || uci set "${CONFIG}_auth.main=auth"
+	uci set "${CONFIG}_auth.main.secret=$s"
+	uci commit "${CONFIG}_auth"
+	chmod 600 /etc/config/${CONFIG}_auth
+	echo '{"ok":true}'
+}
+
+do_clear() {
+	load_config
+	rm -rf "$DATA_DIR/readings"
+	echo '{"ok":true}'
+}
+
+# UPTIMELOG_LIB=1: only define the functions (for tests).
+[ "${UPTIMELOG_LIB:-}" = 1 ] && return 0 2>/dev/null
+
+case "$1" in
+	check) do_check ;;
+	daemon) do_daemon ;;
+	status) do_status ;;
+	data) do_data "$2" "$3" ;;
+	set-secret) do_set_secret ;;
+	clear) do_clear ;;
+	*)
+		echo "usage: uptimelog check|daemon|status|data SINCE [UNTIL]|set-secret|clear" >&2
+		exit 2
+		;;
+esac

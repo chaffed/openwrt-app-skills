@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-nas-monitor
+expected_outcome: |
+  A complete luci-app package in nas-watch/ with a backend, a procd scheduler, LuCI pages and a GL.iNet admin panel page (view file, oui menu entry, i18n label, Lua RPC module using GL's ngx.pipe correctly), a build script producing an installable .ipk, failed checks stored as failed with a reason, and readings only once the router clock is set.

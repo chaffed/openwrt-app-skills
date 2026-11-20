@@ -1,0 +1,18 @@
+{
+	"admin/services/__APP__": {
+		"title": "__TITLE__",
+		"order": 60,
+		"action": { "type": "alias", "path": "admin/services/__APP__/overview" },
+		"depends": { "acl": [ "luci-app-__APP__" ], "uci": { "__APP__": true } }
+	},
+	"admin/services/__APP__/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": { "type": "view", "path": "__APP__/overview" }
+	},
+	"admin/services/__APP__/settings": {
+		"title": "Settings",
+		"order": 2,
+		"action": { "type": "view", "path": "__APP__/settings" }
+	}
+}

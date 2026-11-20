@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: fix-gl-panel-500
+expected_outcome: |
+  The Lua module stops using OpenResty-only pipe methods (set_timeouts, write, shutdown) and passes timeouts as spawn options; the secret is saved without stdin or argv (UCI written directly, file kept 600); install and removal reload nginx gracefully so a new module takes effect.
+context:
+  scaffold_script: place-files.sh

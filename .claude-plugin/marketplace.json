@@ -1,0 +1,14 @@
+{
+  "name": "openwrt-app-skills",
+  "owner": { "name": "chaffed", "url": "https://github.com/chaffed" },
+  "description": "Skills for building OpenWrt and GL.iNet router apps.",
+  "plugins": [
+    {
+      "name": "openwrt-app-skills",
+      "source": "./",
+      "description": "Build, test and ship luci-app packages with LuCI and GL.iNet admin-panel pages.",
+      "category": "development",
+      "keywords": ["openwrt", "luci", "gl.inet", "router"]
+    }
+  ]
+}

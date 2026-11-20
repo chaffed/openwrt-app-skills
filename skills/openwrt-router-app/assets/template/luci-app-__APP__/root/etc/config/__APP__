@@ -1,0 +1,6 @@
+
+config __APP__ 'main'
+	option enabled '1'
+	option interval '5'
+	option target '1.1.1.1'
+	option history_days '90'

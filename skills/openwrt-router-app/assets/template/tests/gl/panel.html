@@ -1,0 +1,88 @@
+<!doctype html>
+<!--
+  A stand-in for the GL.iNet admin panel, for tests/gl.test.js: it loads
+  the app's view file the way the panel does (evaluated, the result
+  used as a Vue component) and provides window.$request with the behaviour
+  of the panel's own (firmware 4.10.1), talking to tests/gl/rpc.lua.
+  ?theme=dark switches to the panel's dark colours.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GL.iNet admin panel (stand-in)</title>
+<link rel="icon" href="data:,">
+<style>
+:root{--primary:#5272f7;--primary-hover:#425bc6;--primary-background:#eef1fe;--error:#e04c7e;--error-background:#fcedf2;
+--warning:#f5a623;--warning-background:#fef6e9;--success:#00c8b5;--text-title:#1f1f3d;--text-subtitle:#555557;--text-strong:#000;
+--text-regular:#141427;--text-weak:#333366;--text-hint:#b9b9bd;--text-disabled:#a0a0a3;--background-card:#fff;--background-title:#f2f2f7;
+--background-content:#ebebf0;--background-disabled:#ebebf0;--border:#d2d2d6;--divider:#ebebf0;--shadow:#d2d2d6;--mask:rgba(16,18,35,.24)}
+:root.dark{--primary:#7a93ff;--primary-hover:#93a8ff;--primary-background:#262b45;--error:#ff6b9a;--error-background:#3a2230;
+--warning:#f5a623;--warning-background:#3a3020;--success:#00c8b5;--text-title:#f2f2f7;--text-subtitle:#b9b9bd;--text-strong:#fff;
+--text-regular:#e6e6ec;--text-weak:#c8c8d8;--text-hint:#77777d;--text-disabled:#66666b;--background-card:#1e1e2a;--background-title:#262633;
+--background-content:#14141c;--background-disabled:#2a2a36;--border:#3a3a48;--divider:#2c2c38;--shadow:#000;--mask:rgba(0,0,0,.5)}
+body{margin:0;font-family:Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--background-content);color:var(--text-regular)}
+#side{position:fixed;left:0;top:0;bottom:0;width:200px;background:var(--background-card);padding:16px;box-sizing:border-box;font-size:14px}
+#side b{display:block;margin-bottom:12px}
+main{margin-left:200px;padding:24px}
+</style>
+</head>
+<body>
+<div id="side"><b>Applications</b><span id="menu-label"></span></div>
+<main id="page"></main>
+<script>
+(function() {
+	'use strict';
+	if (/[?&]theme=dark/.test(location.search))
+		document.documentElement.classList.add('dark');
+
+	var id = 1;
+	/* As in the panel's app bundle: a JSON-RPC error is refused, and so is
+	 * a result with err_code or err_msg (type "api", the other fields
+	 * kept); anything else is the answer. */
+	window.$request = function(method, params, options) {
+		window.$requestLog.push({ method: method, params: params, options: options || {} });
+		return fetch('/cgi-bin/gl-rpc', {
+			method: 'POST', headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ jsonrpc: '2.0', id: id++, method: method, params: params })
+		}).then(function(r) { return r.json(); }).then(function(d) {
+			if (d.error)
+				return Promise.reject(Object.assign({ type: d.error.code === -32602 ? 'invalidParams' : 'unknown' }, d.error));
+			var e = d.result;
+			if (e != null && (e.err_msg || e.err_code)) {
+				var rest = Object.assign({}, e);
+				delete rest.err_msg; delete rest.err_code;
+				return Promise.reject(Object.assign(rest, { type: 'api', message: e.err_msg, code: e.err_code }));
+			}
+			return e;
+		});
+	};
+	window.$requestLog = [];
+
+	/* A createElement good enough for the view's render function. */
+	function h(tag, data, children) {
+		var el = document.createElement(tag), k;
+		data = data || {};
+		if (data.staticClass)
+			el.className = data.staticClass;
+		for (k in data.style || {})
+			el.style[k] = data.style[k];
+		for (k in data.attrs || {})
+			el.setAttribute(k, data.attrs[k]);
+		(children || []).forEach(function(c) { el.appendChild(c); });
+		return el;
+	}
+
+	Promise.all([
+		fetch('/views/gl-sdk4-ui-__APP__.common.js').then(function(r) { return r.text(); }),
+		fetch('/i18n/gl-sdk4-ui-__APP__.en.json').then(function(r) { return r.json(); })
+	]).then(function(got) {
+		var module = { exports: {} };
+		new Function('module', 'exports', got[0])(module, module.exports);
+		window.$view = module.exports;
+		document.getElementById('menu-label').textContent = got[1]['menu_' + module.exports.name];
+		document.getElementById('page').appendChild(module.exports.render(h));
+	});
+})();
+</script>
+</body>
+</html>

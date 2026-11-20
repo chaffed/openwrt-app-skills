@@ -1,0 +1,40 @@
+#!/bin/sh
+# rpcd plugin exposing Uptime Log to LuCI as ubus object "luci.uptimelog".
+# Input arrives as JSON on stdin. Secrets are handed on through stdin or
+# the environment, never the command line, which any process can read.
+# shellcheck shell=dash disable=SC1091,SC2154
+
+. /usr/share/libubox/jshn.sh
+
+case "$1" in
+	list)
+		echo '{"status":{},"data":{"since":0,"until":0},"check":{},"set_secret":{"secret":"str"},"clear":{}}'
+		;;
+	call)
+		case "$2" in
+			status)
+				/usr/bin/uptimelog status
+				;;
+			data)
+				read -r input
+				json_load "$input"
+				json_get_var since since
+				json_get_var until until
+				/usr/bin/uptimelog data "${since:-0}" "${until:-}"
+				;;
+			check)
+				/usr/bin/uptimelog check >/dev/null 2>&1
+				/usr/bin/uptimelog status
+				;;
+			set_secret)
+				read -r input
+				json_load "$input"
+				json_get_var secret secret
+				printf '%s\n' "$secret" | /usr/bin/uptimelog set-secret
+				;;
+			clear)
+				/usr/bin/uptimelog clear
+				;;
+		esac
+		;;
+esac

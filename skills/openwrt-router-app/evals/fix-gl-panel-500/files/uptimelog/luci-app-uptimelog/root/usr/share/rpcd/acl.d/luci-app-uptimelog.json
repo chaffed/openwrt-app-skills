@@ -1,0 +1,17 @@
+{
+	"luci-app-uptimelog": {
+		"description": "Grant access to Uptime Log",
+		"read": {
+			"ubus": {
+				"luci.uptimelog": [ "status", "data" ]
+			},
+			"uci": [ "uptimelog" ]
+		},
+		"write": {
+			"ubus": {
+				"luci.uptimelog": [ "check", "set_secret", "clear" ]
+			},
+			"uci": [ "uptimelog" ]
+		}
+	}
+}

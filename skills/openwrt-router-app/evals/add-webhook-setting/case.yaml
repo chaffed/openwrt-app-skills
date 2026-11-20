@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: add-webhook-setting
+expected_outcome: |
+  The webhook setting exists in LuCI settings.js, the GL form in gl.js and FIELDS in the Lua module, accepts URLs with ? & = %, is validated, is optional, and the backend POSTs safely only when a check fails.
+context:
+  scaffold_script: place-files.sh

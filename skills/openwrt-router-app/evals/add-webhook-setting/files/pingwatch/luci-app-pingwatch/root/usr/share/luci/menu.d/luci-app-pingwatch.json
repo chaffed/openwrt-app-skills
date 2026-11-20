@@ -1,0 +1,18 @@
+{
+	"admin/services/pingwatch": {
+		"title": "Ping Watch",
+		"order": 60,
+		"action": { "type": "alias", "path": "admin/services/pingwatch/overview" },
+		"depends": { "acl": [ "luci-app-pingwatch" ], "uci": { "pingwatch": true } }
+	},
+	"admin/services/pingwatch/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": { "type": "view", "path": "pingwatch/overview" }
+	},
+	"admin/services/pingwatch/settings": {
+		"title": "Settings",
+		"order": 2,
+		"action": { "type": "view", "path": "pingwatch/settings" }
+	}
+}

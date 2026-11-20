@@ -1,0 +1,17 @@
+{
+	"luci-app-__APP__": {
+		"description": "Grant access to __TITLE__",
+		"read": {
+			"ubus": {
+				"luci.__APP__": [ "status", "data" ]
+			},
+			"uci": [ "__APP__" ]
+		},
+		"write": {
+			"ubus": {
+				"luci.__APP__": [ "check", "set_secret", "clear" ]
+			},
+			"uci": [ "__APP__" ]
+		}
+	}
+}

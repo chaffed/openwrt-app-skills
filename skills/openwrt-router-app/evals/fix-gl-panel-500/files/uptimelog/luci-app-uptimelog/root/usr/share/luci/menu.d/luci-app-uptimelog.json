@@ -1,0 +1,18 @@
+{
+	"admin/services/uptimelog": {
+		"title": "Uptime Log",
+		"order": 60,
+		"action": { "type": "alias", "path": "admin/services/uptimelog/overview" },
+		"depends": { "acl": [ "luci-app-uptimelog" ], "uci": { "uptimelog": true } }
+	},
+	"admin/services/uptimelog/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": { "type": "view", "path": "uptimelog/overview" }
+	},
+	"admin/services/uptimelog/settings": {
+		"title": "Settings",
+		"order": 2,
+		"action": { "type": "view", "path": "uptimelog/settings" }
+	}
+}

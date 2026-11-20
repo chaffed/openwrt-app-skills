@@ -1,0 +1,27 @@
+#!/bin/sh
+# Runs once after install or upgrade (postinst runs it and removes it).
+# Keep it idempotent: it also runs on every upgrade.
+touch /etc/config/uptimelog_auth
+chmod 600 /etc/config/uptimelog_auth
+uci -q get uptimelog_auth.main >/dev/null || { uci set uptimelog_auth.main=auth; uci commit uptimelog_auth; }
+chmod 600 /etc/config/uptimelog_auth
+# When settings are kept across an upgrade, opkg leaves the package's own
+# copies next to them as <name>-opkg; nothing reads those.
+rm -f /etc/config/uptimelog-opkg /etc/config/uptimelog_auth-opkg
+# The rpcd plugin and the menu entry: visible without a reboot.
+rm -f /tmp/luci-indexcache* 2>/dev/null
+rm -rf /tmp/luci-modulecache 2>/dev/null
+/etc/init.d/rpcd reload 2>/dev/null
+
+# reload_config only notices changes to configs it already has a checksum
+# for; register ours so the first "Save & Apply" restarts the scheduler.
+if [ -f /var/run/config.md5 ] && ! grep -q '/var/run/config.check/uptimelog$' /var/run/config.md5; then
+	mkdir -p /var/run/config.check
+	uci show uptimelog > /var/run/config.check/uptimelog 2>/dev/null
+	md5sum /var/run/config.check/uptimelog >> /var/run/config.md5
+	rm -rf /var/run/config.check
+fi
+
+/etc/init.d/uptimelog enable 2>/dev/null
+/etc/init.d/uptimelog restart 2>/dev/null
+exit 0
