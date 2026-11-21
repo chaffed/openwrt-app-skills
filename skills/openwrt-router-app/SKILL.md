@@ -85,7 +85,7 @@ Each one is explained, with its fix, in the reference named in brackets.
 - No battery-backed clock: never store a reading before NTP has set the time (`/var/state/dnsmasqsec`). Schedule on `/proc/uptime`. [backend]
 - A ubus reply fails somewhere between 1 and 2 MB: page history in pieces. [backend]
 - An unplugged USB drive's mount point is a RAM folder: check `on_drive` before writing. [backend]
-- LuCI "Save" only stages a change; "Save & Apply" commits it after a rollback wait of several seconds. Menus are cached in `/tmp/luci-indexcache*`. [luci]
+- LuCI "Save" only stages a change; "Save & Apply" commits it, and leaving the page before "Configuration changes applied" makes rpcd roll it back ~90 s later. Menus are cached in `/tmp/luci-indexcache*`. [luci]
 - GL panel:
   - its `ngx.pipe` is not OpenResty's
   - its validator refuses commas and most punctuation

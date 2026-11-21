@@ -85,10 +85,11 @@ function get(url) {
 		await page.selectOption('select[id$="interval"]', '15');
 		await page.fill('input[type=password]', SECRET);
 		/* "Save" only stages the change in the session; "Save & Apply"
-		 * commits it (and runs the reload triggers). */
+		 * commits it, then the page must stay open until LuCI confirms:
+		 * leave earlier and rpcd rolls the change back about 90 s later. */
 		await page.click('.cbi-page-actions .cbi-button-apply');
 		await page.waitForSelector('text=Secret saved', { timeout: 15000 });
-		for (i = 0; i < 200 && router('uci -q get __APP__.main.interval').trim() !== '15'; i++) await sleep(300);
+		await page.waitForSelector('text=Configuration changes applied', { timeout: 120000 });
 		ok(router('uci -q get __APP__.main.interval').trim() === '15', 'LuCI Settings saves a setting');
 		ok(router('uci -q get __APP___auth.main.secret').replace(/\n$/, '') === SECRET, 'LuCI Settings saves the secret exactly, quoting characters and all');
 		await page.reload();

@@ -42,7 +42,7 @@ The template ships three tests that run as they are: `tests/settings.test.js`, `
   - LuCI's login page answers 403, so attach `pageerror`/`console` listeners only after logging in.
   - A reply cut off by navigation never settles `res.text()`. Wrap it in `Promise.race` with a timeout.
   - Polling pages never reach `networkidle`. Wait for a selector.
-  - Save & Apply takes several seconds (rollback confirm). Poll UCI for up to about 60 s.
+  - Save & Apply takes several seconds and needs the page to stay until "Configuration changes applied" appears; leaving earlier makes rpcd roll the change back about 90 s later (a test that reads UCI at once still passes). Wait for that text.
 - LuCI selectors:
   - A field: `[id="widget.cbid.<config>.<section>.<option>"]`; a select's id ends with the option name.
   - A flag: `.cbi-value[data-name="enabled"] input[type=checkbox]`.

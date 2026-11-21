@@ -65,7 +65,7 @@ Then override `handleSave` to call `this.super('handleSave', [ev])` first, follo
 - Tabs: `s.tab('name', _('Label'))` and `s.taboption('name', form.X, …)`.
 - Validation: set `o.datatype` ('host', 'uinteger', `'and(uinteger,range(1,730))'`, `'or(host,hostport)'`). For cross-field rules, use `o.validate = function(sid, value) { return true or 'message'; }`, read siblings with `this.section.children` and `formvalue(sid)`, and re-run validation on the others with `getUIElement(sid).triggerValidation()`.
 - A "Test connection" button is a `form.Button` with `onclick`. Read the typed values with `m.lookupOption(name, sid)[0].formvalue(sid)`, call a `test` rpc, and give a distinct message for each failure reason.
-- **"Save" only stages changes** in the session (`/tmp/run/rpcd/uci-<session>/`). **"Save & Apply" commits them** and runs the reload triggers, after a rollback/confirm cycle that takes several seconds. Tests must click `.cbi-button-apply` and wait up to about 60 s before reading UCI.
+- **"Save" only stages changes** in the session (`/tmp/run/rpcd/uci-<session>/`). **"Save & Apply" commits them** and runs the reload triggers, after a rollback/confirm cycle that takes several seconds. **The page must stay open until LuCI shows "Configuration changes applied"**: if the browser leaves or reloads earlier, the confirm never reaches rpcd and it rolls every change back about 90 s later, silently. Tests must click `.cbi-button-apply` and wait for that text (up to about 2 minutes) before reloading or reading UCI; a test that reads UCI straight away passes and then the change disappears.
 
 ## 6. Traps
 
