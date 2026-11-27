@@ -25,7 +25,7 @@ return view.extend({
 	render: function(st) {
 		var m, s, o, self = this;
 
-		m = new form.Map('__APP__', _('__TITLE__ – Settings'), _('__DESC__'));
+		m = new form.Map('__APP__', _('__TITLEJS__ – Settings'), _('__DESCJS__'));
 
 		s = m.section(form.NamedSection, 'main', '__APP__');
 		s.anonymous = true;
