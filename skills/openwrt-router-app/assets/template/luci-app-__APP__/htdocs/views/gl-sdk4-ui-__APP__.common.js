@@ -13,14 +13,14 @@ module.exports = (function() {
 	'use strict';
 	var stamp = Date.now();
 	var page = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-		'<meta name="viewport" content="width=device-width,initial-scale=1"><title>__TITLE__</title></head>' +
+		'<meta name="viewport" content="width=device-width,initial-scale=1"><title>__TITLEJS__</title></head>' +
 		'<body><script src="/luci-static/resources/__APP__/gl.js?_t=' + stamp + '"></script></body></html>';
 	return {
 		name: '__APP__',
 		render: function(h) {
 			return h('div', { staticClass: '__APP__-gl', style: { width: '100%', paddingBottom: '16px' } }, [
 				h('iframe', {
-					attrs: { title: '__TITLE__', srcdoc: page },
+					attrs: { title: '__TITLEJS__', srcdoc: page },
 					style: { display: 'block', width: '100%', height: '720px', border: '0', background: 'transparent' }
 				})
 			]);

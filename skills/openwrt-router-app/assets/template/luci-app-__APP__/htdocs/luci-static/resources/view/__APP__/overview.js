@@ -77,7 +77,7 @@ return view.extend({
 		}) }, [ _('Check now') ]);
 
 		return E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, [ _('__TITLE__') ]),
+			E('h2', {}, [ _('__TITLEJS__') ]),
 			statusBox,
 			E('div', { 'class': 'cbi-section' }, [ checkBtn ]),
 			E('div', { 'class': 'cbi-section' }, [ E('h3', {}, [ _('Latest readings') ]), rowsBox ])

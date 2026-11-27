@@ -106,7 +106,7 @@ function get(url) {
 		ok(!!frame, 'GL panel: the view file shows the app in a frame');
 		await frame.waitForSelector('text=Latest readings', { timeout: 15000 });
 		ok(true, 'GL panel: the LuCI Overview view runs inside the panel');
-		ok(await page.textContent('#menu-label') === '__TITLE__', 'GL panel: the menu label comes from the i18n file');
+		ok(await page.textContent('#menu-label') === '__TITLEJS__', 'GL panel: the menu label comes from the i18n file');
 		await frame.click('button[data-page=settings]');
 		await frame.waitForSelector('input[type=password]', { timeout: 15000 });
 		await frame.fill('input[type=text]', '9.9.9.9');

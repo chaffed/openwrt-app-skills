@@ -16,7 +16,11 @@ ID=$1 TITLE=$2 DESC=$3 OWNER=$4 DEST=$5
 case $ID in [a-z]*) ;; *) echo "id must start with a lowercase letter" >&2; exit 2 ;; esac
 case $ID in *[!a-z0-9]*) echo "id: lowercase letters and digits only" >&2; exit 2 ;; esac
 [ ${#ID} -le 24 ] || { echo "id: at most 24 characters" >&2; exit 2; }
-case "$TITLE$DESC" in *'|'*|*'\'*) echo "title and description may not contain | or \\" >&2; exit 2 ;; esac
+# They land in JSON, Lua and HTML text as well as JavaScript strings:
+# apostrophes are escaped where needed, these characters are refused.
+# shellcheck disable=SC1003
+case "$TITLE$DESC" in *'|'*|*'\'*|*'"'*|*'<'*|*'>'*|*'
+'*) echo "title and description may not contain | \\ \" < > or a line break" >&2; exit 2 ;; esac
 [ ! -e "$DEST" ] || [ -z "$(ls -A "$DEST" 2>/dev/null)" ] || { echo "$DEST is not empty" >&2; exit 2; }
 
 HERE=$(cd "$(dirname "$0")/.." && pwd)
@@ -24,14 +28,19 @@ TEMPLATE="$HERE/assets/template"
 ENV=$(printf '%s' "$ID" | tr 'a-z' 'A-Z')
 # sed replacement text: escape & (the only special left, | is the delimiter)
 esc() { printf '%s' "$1" | sed 's/&/\\&/g'; }
+# __TITLEJS__ and __DESCJS__ sit inside single-quoted JavaScript strings:
+# an apostrophe there becomes \' (written \\' in sed replacement text).
+jsesc() { esc "$1" | sed "s/'/\\\\\\\\'/g"; }
 T=$(esc "$TITLE") D=$(esc "$DESC") O=$(esc "$OWNER")
+TJ=$(jsesc "$TITLE") DJ=$(jsesc "$DESC")
 
 mkdir -p "$DEST"
 DEST=$(cd "$DEST" && pwd)
 ( cd "$TEMPLATE" && find . -type f ) | while read -r f; do
 	out="$DEST/$(printf '%s' "${f#./}" | sed "s|__APP__|$ID|g")"
 	mkdir -p "$(dirname "$out")"
-	sed -e "s|__APPENV__|$ENV|g" -e "s|__APP__|$ID|g" -e "s|__TITLE__|$T|g" -e "s|__DESC__|$D|g" -e "s|__OWNER__|$O|g" "$TEMPLATE/$f" > "$out"
+	sed -e "s|__APPENV__|$ENV|g" -e "s|__APP__|$ID|g" -e "s|__TITLEJS__|$TJ|g" -e "s|__DESCJS__|$DJ|g" \
+		-e "s|__TITLE__|$T|g" -e "s|__DESC__|$D|g" -e "s|__OWNER__|$O|g" "$TEMPLATE/$f" > "$out"
 done
 chmod 755 "$DEST/luci-app-$ID/root/usr/bin/$ID" "$DEST/luci-app-$ID/root/etc/init.d/$ID" \
 	"$DEST/luci-app-$ID/root/etc/uci-defaults/80_$ID" "$DEST/luci-app-$ID/root/usr/libexec/rpcd/luci.$ID" \
